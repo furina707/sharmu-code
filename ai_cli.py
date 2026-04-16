@@ -6,6 +6,7 @@ import argparse
 import readline
 from datetime import datetime
 from typing import List, Dict, Optional
+import re
 
 try:
     from rich.console import Console
@@ -19,6 +20,7 @@ except ImportError:
 
 CONFIG_FILE = os.path.expanduser('~/.ai_cli_config.json')
 HISTORY_FILE = os.path.expanduser('~/.ai_cli_history')
+SKILLS_DIR = os.path.join(os.path.dirname(__file__), 'skills', 'skills')
 DEFAULT_CONFIG = {
     "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "api_key": "sk-9f6248b7fe5a424b80b360334b190ad2",
@@ -31,7 +33,11 @@ DEFAULT_CONFIG = {
         "kimi-k2.5"
     ],
     "current_model": "qwen3.6-plus",
-    "model_tokens": {}
+    "model_tokens": {},
+    "skills": {
+        "enabled": True,
+        "directory": SKILLS_DIR
+    }
 }
 
 class Color:
@@ -113,11 +119,70 @@ class ModelManager:
         else:
             print(f"{Color.SYSTEM}{message}{Color.RESET}")
 
+class SkillManager:
+    def __init__(self, config, console=None):
+        self.config = config
+        self.console = console
+        self.skills_dir = config.get("skills", {}).get("directory", SKILLS_DIR)
+        self.skills = self._load_skills()
+    
+    def _load_skills(self):
+        skills = {}
+        if not os.path.exists(self.skills_dir):
+            return skills
+        
+        for skill_name in os.listdir(self.skills_dir):
+            skill_path = os.path.join(self.skills_dir, skill_name)
+            if os.path.isdir(skill_path):
+                skill_file = os.path.join(skill_path, "SKILL.md")
+                if os.path.exists(skill_file):
+                    try:
+                        with open(skill_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            # 提取技能名称和描述
+                            name_match = re.search(r'name: (.*)', content)
+                            description_match = re.search(r'description: (.*)', content)
+                            if name_match and description_match:
+                                skills[skill_name] = {
+                                    "name": name_match.group(1),
+                                    "description": description_match.group(1),
+                                    "path": skill_path
+                                }
+                    except Exception as e:
+                        if self.console and RICH_AVAILABLE:
+                            self.console.print(f"[bold red]加载技能 {skill_name} 失败: {e}[/]")
+                        else:
+                            print(f"{Color.ERROR}加载技能 {skill_name} 失败: {e}{Color.RESET}")
+        return skills
+    
+    def list_skills(self):
+        return list(self.skills.keys())
+    
+    def get_skill(self, skill_name):
+        return self.skills.get(skill_name)
+    
+    def reload_skills(self):
+        self.skills = self._load_skills()
+        return len(self.skills)
+    
+    def _print_error(self, message):
+        if self.console and RICH_AVAILABLE:
+            self.console.print(f"[bold red]{message}[/]")
+        else:
+            print(f"{Color.ERROR}{message}{Color.RESET}")
+    
+    def _print_system(self, message):
+        if self.console and RICH_AVAILABLE:
+            self.console.print(f"[bold yellow]{message}[/]")
+        else:
+            print(f"{Color.SYSTEM}{message}{Color.RESET}")
+
 class AICLI:
     def __init__(self):
         self.config = self.load_config()
         self.console = Console() if RICH_AVAILABLE else None
         self.model_manager = ModelManager(self.config, self.console)
+        self.skill_manager = SkillManager(self.config, self.console)
         self.messages: List[Dict] = []
         self._load_history()
     
@@ -193,6 +258,9 @@ class AICLI:
             ("/switch", "切换到下一个模型"),
             ("/model", "显示当前使用的模型"),
             ("/tokens", "显示今日token使用情况"),
+            ("/skills", "显示可用的技能"),
+            ("/skill <name>", "显示指定技能的详细信息"),
+            ("/reload-skills", "重新加载技能"),
             ("/exit", "退出程序"),
             ("/quit", "退出程序")
         ]
@@ -207,6 +275,48 @@ class AICLI:
             print(f"\n{Color.SYSTEM}可用命令:{Color.RESET}")
             for cmd, desc in commands:
                 print(f"  {Color.USER}{cmd}{Color.RESET}: {desc}")
+            print()
+    
+    def _print_skills(self):
+        skills = self.skill_manager.list_skills()
+        if not skills:
+            self._print_system("没有找到可用的技能")
+            return
+        
+        if self.console and RICH_AVAILABLE:
+            lines = []
+            for skill in skills:
+                skill_info = self.skill_manager.get_skill(skill)
+                if skill_info:
+                    lines.append(f"[cyan]{skill}[/]: {skill_info['description']}")
+            self.console.print(Panel("\n".join(lines), title="可用技能", border_style="blue"))
+        else:
+            print(f"\n{Color.SYSTEM}可用技能:{Color.RESET}")
+            for skill in skills:
+                skill_info = self.skill_manager.get_skill(skill)
+                if skill_info:
+                    print(f"  {Color.USER}{skill}{Color.RESET}: {skill_info['description']}")
+            print()
+    
+    def _print_skill_details(self, skill_name):
+        skill_info = self.skill_manager.get_skill(skill_name)
+        if not skill_info:
+            self._print_error(f"未找到技能: {skill_name}")
+            return
+        
+        if self.console and RICH_AVAILABLE:
+            self.console.print(Panel(
+                f"[bold]名称:[/] {skill_info['name']}\n"\
+                f"[bold]描述:[/] {skill_info['description']}\n"\
+                f"[bold]路径:[/] {skill_info['path']}",
+                title=f"技能详情: {skill_name}",
+                border_style="purple"
+            ))
+        else:
+            print(f"\n{Color.SYSTEM}技能详情: {skill_name}{Color.RESET}")
+            print(f"  名称: {skill_info['name']}")
+            print(f"  描述: {skill_info['description']}")
+            print(f"  路径: {skill_info['path']}")
             print()
     
     def _print_tokens(self):
@@ -283,6 +393,14 @@ class AICLI:
                         self._print_system(f"当前使用的模型: {self.model_manager.current_model}")
                     elif cmd == '/tokens':
                         self._print_tokens()
+                    elif cmd == '/skills':
+                        self._print_skills()
+                    elif cmd.startswith('/skill '):
+                        skill_name = user_input[7:].strip()
+                        self._print_skill_details(skill_name)
+                    elif cmd == '/reload-skills':
+                        count = self.skill_manager.reload_skills()
+                        self._print_system(f"已重新加载 {count} 个技能")
                     else:
                         self._print_error(f"未知命令: {user_input}。输入 /help 查看可用命令")
                     continue
