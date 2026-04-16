@@ -133,72 +133,15 @@ class AICLI:
             else:
                 return f"请求异常: {str(e)}"
     
-    def interactive_mode(self):
-        """交互式模式"""
-        print(f"AI CLI 工具\n当前模型: {self.model_manager.current_model}")
-        print("输入 'exit' 退出，'models' 查看模型列表，'switch' 手动切换模型")
-        
-        messages = []
-        
-        try:
-            while True:
-                try:
-                    user_input = input("\n你: ")
-                    if user_input.lower() == 'exit':
-                        break
-                    elif user_input.lower() == 'models':
-                        models = self.model_manager.get_models()
-                        print("\n可用模型:")
-                        for model in models:
-                            if model == self.model_manager.current_model:
-                                print(f"* {model} (当前)")
-                            else:
-                                print(f"  {model}")
-                        continue
-                    elif user_input.lower() == 'switch':
-                        self.model_manager.switch_model()
-                        print(f"当前模型: {self.model_manager.current_model}")
-                        continue
-                    
-                    # 添加用户消息
-                    messages.append({"role": "user", "content": user_input})
-                    
-                    # 调用API
-                    print("\nAI:", end=" ")
-                    response = self.chat_completion(messages)
-                    print(response)
-                    
-                    # 添加AI回复
-                    messages.append({"role": "assistant", "content": response})
-                    
-                    # 限制消息历史长度
-                    if len(messages) > 10:
-                        messages = messages[-10:]
-                        
-                except KeyboardInterrupt:
-                    print("\n退出程序")
-                    break
-                except EOFError:
-                    print("\nEOF 错误: 非交互式环境无法使用交互式模式")
-                    break
-                except Exception as e:
-                    print(f"错误: {e}")
-        except Exception as e:
-            print(f"交互式模式初始化失败: {e}")
-            print("建议使用 --prompt 参数进行单次查询")
-    
     def run(self, args):
         """运行CLI"""
-        if args.interactive:
-            self.interactive_mode()
-        elif args.prompt:
+        if args.prompt:
             messages = [{"role": "user", "content": args.prompt}]
             response = self.chat_completion(messages)
             print(response)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI CLI 工具，支持自动切换模型")
-    parser.add_argument("--interactive", action="store_true", help="进入交互式模式")
     parser.add_argument("--prompt", type=str, help="单次提示词")
     
     args = parser.parse_args()
