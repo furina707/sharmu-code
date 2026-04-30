@@ -1,0 +1,11 @@
+import type { Config, TokenUsage } from "./types.js";
+export declare function getConfig(): Config;
+export declare function setConfig(newConfig: Partial<Config>): void;
+export declare function setApiKey(key: string): void;
+export declare function setApiBase(base: string): void;
+export declare function setCurrentModel(model: string): void;
+export declare function switchModel(): string | null;
+export declare function getTokenUsage(): TokenUsage;
+export declare function updateTokenUsage(model: string, tokens: number): void;
+export declare function getTodayTokenUsage(): number;
+export declare function isConfigured(): boolean;
